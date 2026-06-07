@@ -1,0 +1,8 @@
+version: 1.0
+project:
+  name: "OLED sample input"
+  description: "Root input file for a sample OLED project using separate material DB and device stack files."
+  material_database: "../../data/materials/material_db.yaml"
+  device_stack: "device_stack_oled.yaml"
+  measurement: "measurement_oled.yaml"
+  solver_config: "solver_config_oled.yaml"

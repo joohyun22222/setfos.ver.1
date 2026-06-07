@@ -1,0 +1,43 @@
+version: 1.0
+stack:
+  name: "OLED sample stack"
+  substrate: "glass"
+  layers:
+    - order: 1
+      layer_name: "ITO"
+      material_name: "ITO"
+      thickness_nm: 150
+      layer_role: "anode"
+      electrode:
+        is_electrode: true
+        type: "transparent"
+        work_function: 4.7
+    - order: 2
+      layer_name: "TCTA"
+      material_name: "TCTA"
+      thickness_nm: 40
+      layer_role: "hole_transport"
+      electrode:
+        is_electrode: false
+    - order: 3
+      layer_name: "EML"
+      material_name: "TCTA"
+      thickness_nm: 30
+      layer_role: "emitter"
+      emitter:
+        dopant: "Ir(ppy)3"
+        dopant_fraction: "8%"
+    - order: 4
+      layer_name: "TPBi"
+      material_name: "TPBi"
+      thickness_nm: 50
+      layer_role: "electron_transport"
+    - order: 5
+      layer_name: "Al"
+      material_name: "Al"
+      thickness_nm: 100
+      layer_role: "cathode"
+      electrode:
+        is_electrode: true
+        type: "metal"
+        work_function: 4.2

@@ -1,0 +1,7 @@
+emitter_type: phosphorescent
+layer_name: EML
+material: "Ir(ppy)3"
+pl_spectrum_file: "data/pl/Irppy3_pl.csv"
+horizontal_fraction: 0.78
+z_distribution: center
+notes: "Green phosphorescent emitter fac-tris(2-phenylpyridine)iridium. PLQY ~100% in dilute film."

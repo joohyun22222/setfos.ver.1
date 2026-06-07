@@ -1,0 +1,24 @@
+# Material database schema definition
+version: 1.0
+format: material-db
+materials:
+  - material_name: "<string>"
+    optical:
+      nk_reference: "<string>"  # path or URL to n/k CSV file
+      reference_type: "csv"
+    homo: <number>              # HOMO energy in eV
+    lumo: <number>              # LUMO energy in eV
+    work_function: <number>     # Optional absolute work function in eV
+    electrode:
+      type: "<anode|cathode|contact>"
+      work_function: <number>
+    electron_mobility: <number> # cm^2 / V / s
+    hole_mobility: <number>     # cm^2 / V / s
+    dielectric_constant: <number>
+    thermal_properties:
+      heat_capacity: <number>        # optional, J/(g*K)
+      thermal_conductivity: <number> # optional, W/(m*K)
+      expansion_coefficient: <number> # optional
+    metadata:
+      vendor: "<string>"
+      notes: "<string>"

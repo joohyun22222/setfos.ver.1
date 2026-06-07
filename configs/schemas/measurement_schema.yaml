@@ -1,0 +1,15 @@
+# Measurement schema definition
+version: 1.0
+format: measurement
+measurement:
+  name: "<string>"
+  type: "<IV|IVL|EL|EQE|spectral>"
+  data_file: "<string>"  # path to CSV data file
+  units:
+    voltage: "V"
+    current_density: "mA/cm2"
+    luminance: "cd/m2"
+    spectral_quantity: "<string>"
+  temperature_K: <number>
+  scan_direction: "<forward|reverse|both>"
+  comments: "<string>"

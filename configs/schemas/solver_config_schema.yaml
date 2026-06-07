@@ -1,0 +1,49 @@
+# Solver configuration schema definition
+version: 1.0
+format: solver-config
+solver:
+  simulation_name: "<string>"
+  simulation_type: "<OLED|PV|transfer>"
+  max_iterations: <integer>
+
+  wavelength_grid:
+    start_nm: <number>   # nm
+    end_nm: <number>     # nm
+    step_nm: <number>    # nm
+
+  bias_sweep:
+    start_V: <number>    # V
+    end_V: <number>      # V
+    step_V: <number>     # V
+
+  convergence:
+    tolerance: <number>                       # absolute residual threshold
+    criterion: "<residual|field|current>"     # convergence判定 기준
+    norm: "<L2|Linf>"                         # norm 종류
+
+  damping:
+    enabled: <boolean>
+    factor: <number>      # 0 < factor <= 1; 1 = no damping
+    adaptive: <boolean>   # factor를 잔차에 따라 동적 조정할지 여부
+
+  mesh:
+    resolution_nm: <number>
+
+  physics:
+    include_thermal: <boolean>
+    include_excitonics: <boolean>
+    include_charge_transport: <boolean>
+
+  boundary_conditions:
+    anode:
+      potential_eV: <number>
+    cathode:
+      potential_eV: <number>
+
+  output:
+    save_fields: <boolean>
+    output_folder: "<string>"
+
+  metadata:
+    author: "<string>"
+    date: "<YYYY-MM-DD>"

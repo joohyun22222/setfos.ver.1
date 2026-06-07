@@ -1,0 +1,21 @@
+# Device stack schema definition
+version: 1.0
+format: device-stack
+stack:
+  name: "<string>"
+  substrate: "<string>"
+  layers:
+    - order: <integer>
+      layer_name: "<string>"
+      material_name: "<string>"
+      thickness_nm: <number>
+      layer_role: "<anode|hole_transport|emitter|electron_transport|cathode|blocking|interlayer>"
+      electrode:
+        is_electrode: <boolean>
+        type: "<transparent|metal|semiconductor|unknown>"
+        work_function: <number>
+      emitter:
+        dopant: "<string>"
+        dopant_fraction: "<string>"
+      properties:
+        notes: "<string>"

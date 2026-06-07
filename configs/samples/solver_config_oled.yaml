@@ -1,0 +1,47 @@
+version: 1.0
+solver:
+  simulation_name: "OLED sample solver"
+  simulation_type: "OLED"
+  max_iterations: 200
+
+  wavelength_grid:
+    start_nm: 380.0
+    end_nm: 780.0
+    step_nm: 5.0
+
+  bias_sweep:
+    start_V: 0.0
+    end_V: 8.0
+    step_V: 0.1
+
+  convergence:
+    tolerance: 1.0e-7
+    criterion: "residual"   # residual | field | current
+    norm: "L2"              # L2 | Linf
+
+  damping:
+    enabled: true
+    factor: 0.5
+    adaptive: true
+
+  mesh:
+    resolution_nm: 1.0
+
+  physics:
+    include_thermal: true
+    include_excitonics: true
+    include_charge_transport: true
+
+  boundary_conditions:
+    anode:
+      potential_eV: 4.7
+    cathode:
+      potential_eV: 4.2
+
+  output:
+    save_fields: true
+    output_folder: "../outputs"
+
+  metadata:
+    author: "SETFOS sample"
+    date: "2026-05-28"

@@ -1,0 +1,12 @@
+version: 1.0
+measurement:
+  name: "OLED IVL sweep"
+  type: "IVL"
+  data_file: "../../data/measurements/oled_ivl.csv"
+  units:
+    voltage: "V"
+    current_density: "mA/cm2"
+    luminance: "cd/m2"
+  temperature_K: 300
+  scan_direction: "forward"
+  comments: "Sample OLED current-voltage-luminance measurement."
