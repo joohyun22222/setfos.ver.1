@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..io.models import DeviceStack, MaterialDB, MaterialEntry, Layer
+from .traps import aggregate_trap_srh
 
 # ---------------------------------------------------------------------------
 # Physical constants (SI)
@@ -65,6 +66,9 @@ class NodeProps:
     N_doping: float         # net doping N_D − N_A [m⁻³]; > 0 → n-type
     is_electrode: bool      # True for metal contacts
     work_function_eV: float # contact Fermi level [eV]; 0 for organics
+    # Trap-state SRH statistics (Step 13); default = nᵢ = midgap assumption
+    trap_n1: float = 1e10   # n₁ = nᵢ·exp((E_t−E_i)/kT) [m⁻³]
+    trap_p1: float = 1e10   # p₁ = nᵢ·exp((E_i−E_t)/kT) [m⁻³]
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +264,11 @@ def _mat_to_node_props(mat: MaterialEntry) -> NodeProps:
 
     eps_r = float(mat.dielectric_constant) if mat.dielectric_constant else 3.0
 
+    # Trap-state SRH: derive effective lifetimes and statistics (Step 13)
+    tau_n, tau_p, trap_n1, trap_p1 = aggregate_trap_srh(
+        mat.trap_states, Eg_eV, _DEFAULT_NC_NV, _DEFAULT_NC_NV
+    )
+
     return NodeProps(
         eps_r=eps_r,
         chi_eV=chi_eV,
@@ -268,9 +277,11 @@ def _mat_to_node_props(mat: MaterialEntry) -> NodeProps:
         Nv=_DEFAULT_NC_NV,
         mu_n=mu_n,
         mu_p=mu_p,
-        tau_n=_DEFAULT_TAU,
-        tau_p=_DEFAULT_TAU,
+        tau_n=tau_n,
+        tau_p=tau_p,
         N_doping=0.0,
         is_electrode=False,
         work_function_eV=0.0,
+        trap_n1=trap_n1,
+        trap_p1=trap_p1,
     )

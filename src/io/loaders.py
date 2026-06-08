@@ -29,6 +29,7 @@ from .models import (
     Project,
     SolverConfig,
     ThermalProperties,
+    TrapState,
     WavelengthGrid,
 )
 
@@ -102,6 +103,11 @@ def _parse_material_entry(raw: dict) -> MaterialEntry:
 
     meta = _get(raw, "metadata", {}) or {}
 
+    trap_states = [
+        _parse_trap_state(ts)
+        for ts in (_get(raw, "trap_states") or [])
+    ]
+
     return MaterialEntry(
         material_name=name,
         nk_reference=nk_ref,
@@ -113,6 +119,20 @@ def _parse_material_entry(raw: dict) -> MaterialEntry:
         electrode=electrode,
         thermal=thermal,
         notes=_get(meta, "notes", ""),
+        trap_states=trap_states,
+    )
+
+
+def _parse_trap_state(raw: dict) -> TrapState:
+    label = "material.trap_states"
+    return TrapState(
+        density_m3=float(_require(raw, "density_m3", label)),
+        energy_from_lumo_eV=float(_require(raw, "energy_from_lumo_eV", label)),
+        sigma_n=float(_require(raw, "sigma_n", label)),
+        sigma_p=float(_require(raw, "sigma_p", label)),
+        vth_n=float(_get(raw, "vth_n", 1e5)),
+        vth_p=float(_get(raw, "vth_p", 1e5)),
+        label=str(_get(raw, "label", "trap")),
     )
 
 

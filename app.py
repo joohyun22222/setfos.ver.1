@@ -1,4 +1,4 @@
-"""SETFOS OLED Optical Simulation Dashboard.
+"""SETFOS OLED Simulation Dashboard — Optical + Electrical + J-V-L.
 
 Run:
     streamlit run app.py
@@ -27,6 +27,12 @@ from src.optics.rta import RTASolver
 NK_ROOT  = ROOT / "data" / "nk"
 SAMPLES  = ROOT / "configs" / "samples"
 PL_ROOT  = ROOT / "data" / "pl"
+
+# J-V-L imports
+from src.electrical import build_mesh, build_solver, GummelConfig, BiasSweepRunner
+from src.electrical.recombination import RecombinationSolver
+from src.electrical.continuity import ContinuitySolver
+from src.jvl import JVLCalculator, JVLResult
 
 # Layer color map
 LAYER_COLORS = {
@@ -310,6 +316,22 @@ with st.sidebar:
     run_btn = st.button("▶ 시뮬레이션 실행", use_container_width=True, type="primary")
 
     st.divider()
+    st.subheader("J-V-L 효율 파라미터")
+    eta_rad = st.slider(
+        "η_rad (방사 효율)",
+        min_value=0.0, max_value=1.0, value=0.80, step=0.05,
+        help="PLQY × η_spin. 인광(Ir(ppy)₃): PLQY×1.0, 형광: PLQY×0.25",
+        key="eta_rad",
+    )
+    eta_out = st.slider(
+        "η_out (광추출 효율)",
+        min_value=0.0, max_value=1.0, value=0.20, step=0.01,
+        help="유리 기판 OLED ≈ 0.20 (≈1/2n²). 이상적 = 1.0",
+        key="eta_out",
+    )
+    st.caption(f"η_rad × η_out = {eta_rad * eta_out:.3f}  (유효 광자 추출 효율)")
+
+    st.divider()
     st.subheader("OLED Stack")
     st.markdown("""
 | Layer | Material | d (nm) |
@@ -346,7 +368,7 @@ col5.metric(
 st.divider()
 
 # ── Tabs ───────────────────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["⚡ Field Profile", "📊 Layer Absorption", "🌿 Emission"])
+tab1, tab2, tab3, tab4 = st.tabs(["⚡ Field Profile", "📊 Layer Absorption", "🌿 Emission", "📈 J-V-L / EQE"])
 
 # ── Tab 1: Field Profile ───────────────────────────────────────────────────
 with tab1:
@@ -403,3 +425,199 @@ with tab3:
             "Emission": result.emission_spectrum.round(8),
         })
         st.dataframe(em_df, use_container_width=True, height=300)
+
+
+# ── Tab 4: J-V-L / EQE ────────────────────────────────────────────────────
+
+@st.cache_resource(show_spinner="J-V-L 시뮬레이션 실행 중… (최초 1회)")
+def _build_jvl_calculator(_fp, eta_rad: float, eta_out: float):
+    project = load_project(SAMPLES / "oled_input.yaml")
+    emitter_cfg = load_emitter_config(SAMPLES / "emitter_irppy3.yaml")
+    mesh = build_mesh(project.device_stack, project.material_db, z_resolution_nm=1.0)
+    # 수렴 안정성 개선: 반복 횟수 증가, damping 강화
+    cfg  = GummelConfig(max_iterations=300, tolerance=1e-5, damping=0.3)
+    gummel = build_solver(mesh, cfg)
+    cont = ContinuitySolver(mesh)
+    rec_solver = RecombinationSolver(mesh, cont)
+    solver = EmissionSolver(nk_root=NK_ROOT, project_root=ROOT)
+    wl = _fp.wavelength_nm
+    emitter_profile = solver._load_emitter(emitter_cfg, wl)
+    return JVLCalculator(
+        gummel=gummel, rec_solver=rec_solver, field_profile=_fp,
+        emitter_profile=emitter_profile, emitter_layer="EML",
+        eta_rad=eta_rad, eta_out=eta_out,
+    )
+
+
+@st.cache_data(show_spinner="J-V-L sweep 계산 중…")
+def run_jvl(_calc, v_start, v_end, n_pts):
+    return _calc.run(v_start=v_start, v_end=v_end, n_points=n_pts)
+
+
+with tab4:
+    st.subheader("J-V-L Sweep 설정")
+    jc1, jc2, jc3 = st.columns(3)
+    jvl_v_start = jc1.number_input("V_start (V)", value=0.0, step=0.5, key="jvl_vs")
+    jvl_v_end   = jc2.number_input("V_end (V)",   value=4.0, step=0.5, key="jvl_ve")
+    jvl_n_pts   = jc3.number_input("N_points",    value=5,   step=1,   min_value=2, key="jvl_np")
+
+    run_jvl_btn = st.button("▶ J-V-L 실행", type="primary", key="jvl_run")
+
+    if run_jvl_btn or "jvl_result" in st.session_state:
+        if run_jvl_btn:
+            calc = _build_jvl_calculator(fp, eta_rad, eta_out)
+            st.session_state["jvl_result"] = run_jvl(calc, jvl_v_start, jvl_v_end, int(jvl_n_pts))
+
+        res: JVLResult = st.session_state["jvl_result"]
+
+        # ── Key metrics ───────────────────────────────────────────────────
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("L_max", f"{float(res.luminance.max()):.1f} cd/m²")
+        m2.metric("EQE_max", f"{float(res.eqe_pct.max()):.2f} %")
+        m3.metric("CE_max", f"{float(res.cd_per_A.max()):.2f} cd/A")
+        m4.metric("PE_max", f"{float(res.lm_per_W.max()):.2f} lm/W")
+        m5.metric("Peak λ", f"{float(res.peak_wavelength_nm[res.luminance.argmax()]):.0f} nm")
+
+        st.divider()
+
+        # ── J-V curve ─────────────────────────────────────────────────────
+        col_jv, col_lv = st.columns(2)
+        with col_jv:
+            J_ma = np.abs(res.J_mAcm2)
+            J_safe = np.where(J_ma > 0, J_ma, np.nan)
+            fig_jv = go.Figure()
+            fig_jv.add_trace(go.Scatter(
+                x=res.voltages, y=J_safe,
+                mode="lines+markers",
+                line=dict(color="#00b4d8", width=2),
+                marker=dict(size=6),
+                name="|J| (mA/cm²)",
+            ))
+            fig_jv.update_layout(
+                title="J-V Characteristic",
+                xaxis_title="Voltage (V)",
+                yaxis_title="|J| (mA/cm²)",
+                yaxis_type="log",
+                height=340,
+                margin=dict(l=60, r=20, t=50, b=50),
+            )
+            st.plotly_chart(fig_jv, use_container_width=True)
+
+        with col_lv:
+            L_safe = np.where(res.luminance > 0, res.luminance, np.nan)
+            fig_lv = go.Figure()
+            fig_lv.add_trace(go.Scatter(
+                x=res.voltages, y=L_safe,
+                mode="lines+markers",
+                line=dict(color="#50ff78", width=2),
+                marker=dict(size=6),
+                name="L (cd/m²)",
+            ))
+            fig_lv.update_layout(
+                title="Luminance-Voltage (L-V)",
+                xaxis_title="Voltage (V)",
+                yaxis_title="Luminance (cd/m²)",
+                yaxis_type="log",
+                height=340,
+                margin=dict(l=60, r=20, t=50, b=50),
+            )
+            st.plotly_chart(fig_lv, use_container_width=True)
+
+        # ── EQE / CE / PE ──────────────────────────────────────────────────
+        col_eq, col_ce = st.columns(2)
+        with col_eq:
+            fig_eqe = go.Figure()
+            fig_eqe.add_trace(go.Scatter(
+                x=res.voltages, y=res.eqe_pct,
+                mode="lines+markers",
+                line=dict(color="#b482ff", width=2),
+                marker=dict(size=6),
+                name="EQE (%)",
+            ))
+            fig_eqe.update_layout(
+                title="External Quantum Efficiency (EQE)",
+                xaxis_title="Voltage (V)",
+                yaxis_title="EQE (%)",
+                height=320,
+                margin=dict(l=60, r=20, t=50, b=50),
+            )
+            st.plotly_chart(fig_eqe, use_container_width=True)
+
+        with col_ce:
+            fig_ce = go.Figure()
+            fig_ce.add_trace(go.Scatter(
+                x=res.voltages, y=res.cd_per_A,
+                mode="lines+markers",
+                line=dict(color="#ffc850", width=2),
+                marker=dict(size=6),
+                name="CE (cd/A)",
+            ))
+            fig_ce.add_trace(go.Scatter(
+                x=res.voltages, y=res.lm_per_W,
+                mode="lines+markers",
+                line=dict(color="#ff6b6b", width=2, dash="dash"),
+                marker=dict(size=6),
+                name="PE (lm/W)",
+            ))
+            fig_ce.update_layout(
+                title="Current & Power Efficiency",
+                xaxis_title="Voltage (V)",
+                yaxis_title="Efficiency",
+                height=320,
+                margin=dict(l=60, r=20, t=50, b=50),
+                legend=dict(orientation="h", y=-0.25),
+            )
+            st.plotly_chart(fig_ce, use_container_width=True)
+
+        # ── Emission spectrum at selected bias ─────────────────────────────
+        st.subheader("바이어스별 EL 스펙트럼")
+        v_sel = st.select_slider(
+            "Voltage (V)",
+            options=[f"{v:.3f}" for v in res.voltages],
+            value=f"{res.voltages[-1]:.3f}",
+            key="jvl_v_sel",
+        )
+        wl_sp, em_sp = res.spectrum_at(float(v_sel))
+        fig_sp = go.Figure()
+        fig_sp.add_trace(go.Scatter(
+            x=wl_sp, y=em_sp / (em_sp.max() + 1e-30),
+            mode="lines",
+            line=dict(color="#50ff78", width=2),
+            fill="tozeroy",
+            fillcolor="rgba(80,255,120,0.15)",
+            name=f"V = {v_sel} V",
+        ))
+        fig_sp.update_layout(
+            title=f"EL Spectrum @ {v_sel} V",
+            xaxis_title="Wavelength (nm)",
+            yaxis_title="Intensity (norm.)",
+            height=300,
+            margin=dict(l=60, r=20, t=50, b=50),
+        )
+        st.plotly_chart(fig_sp, use_container_width=True)
+
+        # ── Results table ──────────────────────────────────────────────────
+        st.subheader("J-V-L 수치 결과")
+        import pandas as _pd
+        jvl_df = _pd.DataFrame({
+            "V (V)":         res.voltages.round(3),
+            "J (A/m²)":      res.J_Am2.round(4),
+            "J (mA/cm²)":    res.J_mAcm2.round(4),
+            "L (cd/m²)":     res.luminance.round(3),
+            "EQE (%)":       res.eqe_pct.round(3),
+            "CE (cd/A)":     res.cd_per_A.round(4),
+            "PE (lm/W)":     res.lm_per_W.round(4),
+            "Peak λ (nm)":   res.peak_wavelength_nm.round(1),
+        })
+        st.dataframe(jvl_df, use_container_width=True, hide_index=True)
+
+        # ── CSV download ───────────────────────────────────────────────────
+        csv_buf = jvl_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="CSV 다운로드",
+            data=csv_buf,
+            file_name="jvl_result.csv",
+            mime="text/csv",
+        )
+    else:
+        st.info("'▶ J-V-L 실행' 버튼을 눌러 시뮬레이션을 시작하세요.")

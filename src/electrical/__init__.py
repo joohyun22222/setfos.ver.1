@@ -29,6 +29,7 @@ from .mesh import Mesh1D, NodeProps, build_mesh
 from .models import BiasPoint, DeviceState, GummelConfig, RecombinationProfile, SweepResult
 from .poisson import PoissonSolver
 from .recombination import RecombinationSolver, RecombinationSweep
+from .traps import aggregate_trap_srh, srh_lifetimes, srh_stat_densities
 
 __all__ = [
     # mesh
@@ -51,4 +52,8 @@ __all__ = [
     # recombination (Step 9)
     "RecombinationSolver",
     "RecombinationSweep",
+    # trap physics (Step 13)
+    "srh_lifetimes",
+    "srh_stat_densities",
+    "aggregate_trap_srh",
 ]

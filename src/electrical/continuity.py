@@ -81,6 +81,10 @@ class ContinuitySolver:
         self._tau_n = np.array([pr.tau_n for pr in mesh.node_props])
         self._tau_p = np.array([pr.tau_p for pr in mesh.node_props])
 
+        # Trap-state SRH statistics (Step 13); default = nᵢ = midgap
+        self._trap_n1 = np.array([pr.trap_n1 for pr in mesh.node_props])
+        self._trap_p1 = np.array([pr.trap_p1 for pr in mesh.node_props])
+
     # ------------------------------------------------------------------
     # 공개 API: 솔버
     # ------------------------------------------------------------------
@@ -113,9 +117,12 @@ class ContinuitySolver:
         Bu  = self.bernoulli(u)                       # B(u)
         Bmu = self.bernoulli(-u)                      # B(-u)
 
-        # 선형화된 SRH (전자 분자 선형화, p 고정)
+        # 선형화된 SRH — trap-state 통계 적용 (Step 13)
+        # D = τ_p·(2·n₁) + τ_n·(p + p₁);  midgap 기본: n₁=p₁=nᵢ
         ni  = _NI_DEFAULT
-        D   = np.maximum(self._tau_p * (2.0 * ni) + self._tau_n * (p + ni), 1e-300)
+        n1  = self._trap_n1
+        p1  = self._trap_p1
+        D   = np.maximum(self._tau_p * (2.0 * n1) + self._tau_n * (p + p1), 1e-300)
         a_n = p / D       # R ≈ a_n·n − c_n
         c_n = ni**2 / D
 
@@ -174,9 +181,12 @@ class ContinuitySolver:
         Bu  = self.bernoulli(u)
         Bmu = self.bernoulli(-u)
 
-        # 선형화된 SRH (정공 분자 선형화, n 고정)
+        # 선형화된 SRH — trap-state 통계 적용 (Step 13)
+        # D = τ_n·(2·p₁) + τ_p·(n + n₁);  midgap 기본: n₁=p₁=nᵢ
         ni  = _NI_DEFAULT
-        D   = np.maximum(self._tau_p * (n + ni) + self._tau_n * (2.0 * ni), 1e-300)
+        n1  = self._trap_n1
+        p1  = self._trap_p1
+        D   = np.maximum(self._tau_n * (2.0 * p1) + self._tau_p * (n + n1), 1e-300)
         a_p = n / D
         c_p = ni**2 / D
 
@@ -304,12 +314,13 @@ class ContinuitySolver:
     ) -> np.ndarray:
         """Shockley-Read-Hall 재결합률 R(z) [m⁻³/s].
 
-            R = (np − ni²) / [τ_p·(n+ni) + τ_n·(p+ni)]
+            R = (np − ni²) / [τ_p·(n + n₁) + τ_n·(p + p₁)]
 
+        trap-state 통계(n₁, p₁)를 사용; 기본값 n₁=p₁=nᵢ (midgap).
         열평형 (np = ni²) 에서 R = 0.
         """
         ni2   = ni ** 2
-        denom = self._tau_p * (n + ni) + self._tau_n * (p + ni)
+        denom = self._tau_p * (n + self._trap_n1) + self._tau_n * (p + self._trap_p1)
         return np.where(denom > 0, (n * p - ni2) / denom, 0.0)
 
     def diffusion_coefficient(self, mu: np.ndarray) -> np.ndarray:

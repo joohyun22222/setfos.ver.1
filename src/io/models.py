@@ -7,6 +7,34 @@ from typing import Any
 
 
 # ---------------------------------------------------------------------------
+# Trap states (Step 13)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class TrapState:
+    """Single-level SRH trap state — input configuration (Step 13).
+
+    Parameters
+    ----------
+    density_m3          : trap density N_t [m⁻³]
+    energy_from_lumo_eV : trap depth below LUMO [eV].
+                          0 = LUMO edge; Eg/2 = midgap (maximum SRH); Eg = HOMO.
+    sigma_n             : electron capture cross-section [m²]
+    sigma_p             : hole capture cross-section [m²]
+    vth_n               : electron thermal velocity [m/s] (default 1e5 for organics)
+    vth_p               : hole thermal velocity [m/s]     (default 1e5)
+    label               : free-text identifier
+    """
+    density_m3: float
+    energy_from_lumo_eV: float
+    sigma_n: float
+    sigma_p: float
+    vth_n: float = 1e5
+    vth_p: float = 1e5
+    label: str = "trap"
+
+
+# ---------------------------------------------------------------------------
 # Material DB
 # ---------------------------------------------------------------------------
 
@@ -35,6 +63,7 @@ class MaterialEntry:
     electrode: ElectrodeParams | None
     thermal: ThermalProperties
     notes: str
+    trap_states: list[TrapState] = field(default_factory=list)
 
     def is_electrode(self) -> bool:
         return self.electrode is not None

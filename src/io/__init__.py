@@ -29,6 +29,7 @@ from .models import (
     Project,
     SolverConfig,
     ThermalProperties,
+    TrapState,
     WavelengthGrid,
 )
 
@@ -62,4 +63,6 @@ __all__ = [
     "MeasurementUnits",
     "Project",
     "EmitterConfig",
+    # trap states (Step 13)
+    "TrapState",
 ]
