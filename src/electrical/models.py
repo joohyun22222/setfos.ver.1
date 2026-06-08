@@ -14,6 +14,8 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pathlib import Path
+
 import numpy as np
 
 
@@ -172,3 +174,103 @@ class SweepResult:
             f"V=[{self.voltages[0]:.2f}, {self.voltages[-1]:.2f}] V  "
             f"all_converged={self.all_converged}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Recombination profile (Step 9)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RecombinationProfile:
+    """바이어스별 위치 의존 재결합 프로파일.
+
+    Array units
+    -----------
+    z_nm        : nm   (노드 위치)
+    R_srh_m3s   : m⁻³/s  (SRH 재결합률)
+    R_lan_m3s   : m⁻³/s  (Langevin 쌍극자 재결합률)
+    R_total_m3s : m⁻³/s  (전체 재결합률 = SRH + Langevin)
+
+    Exciton generation 연결
+    -----------------------
+    Langevin 재결합이 엑시톤을 생성한다고 가정 (스핀 통계 기준):
+      G_singlet = 0.25 × R_lan  (단일항 S₁)
+      G_triplet = 0.75 × R_lan  (삼중항 T₁)
+    인광 OLED (Ir(ppy)₃ 등)는 삼중항 수확으로 이론 IQE = 100%.
+    """
+
+    voltage_V: float
+    z_nm: np.ndarray          # (N,)
+    R_srh_m3s: np.ndarray     # (N,)
+    R_lan_m3s: np.ndarray     # (N,)
+    R_total_m3s: np.ndarray   # (N,)
+
+    # ------------------------------------------------------------------
+    # 엑시톤 생성 속성
+    # ------------------------------------------------------------------
+
+    @property
+    def G_exciton_m3s(self) -> np.ndarray:
+        """엑시톤 생성률 ≡ Langevin 재결합률 [m⁻³/s]."""
+        return self.R_lan_m3s
+
+    @property
+    def G_singlet_m3s(self) -> np.ndarray:
+        """단일항 엑시톤 생성률 (스핀 통계 25%) [m⁻³/s]."""
+        return 0.25 * self.R_lan_m3s
+
+    @property
+    def G_triplet_m3s(self) -> np.ndarray:
+        """삼중항 엑시톤 생성률 (스핀 통계 75%) [m⁻³/s]."""
+        return 0.75 * self.R_lan_m3s
+
+    # ------------------------------------------------------------------
+    # 진단 속성
+    # ------------------------------------------------------------------
+
+    @property
+    def peak_z_nm(self) -> float:
+        """최대 전체 재결합률 위치 [nm]."""
+        return float(self.z_nm[np.argmax(self.R_total_m3s)])
+
+    @property
+    def total_recombination_m2s(self) -> float:
+        """전체 장치 재결합률 적분 [m⁻²/s] (사다리꼴 규칙)."""
+        return float(np.trapezoid(self.R_total_m3s, self.z_nm * 1e-9))
+
+    # ------------------------------------------------------------------
+    # 직렬화 (excitonics 모듈 연결용)
+    # ------------------------------------------------------------------
+
+    def exciton_generation_dict(self) -> dict:
+        """Step 10 엑시톤 솔버에 전달 가능한 포맷으로 직렬화.
+
+        반환 키
+        -------
+        voltage_V       : 인가 전압 [V]
+        z_nm            : 위치 배열 [nm]
+        G_total_m3s     : 전체 엑시톤 생성률 [m⁻³/s]
+        G_singlet_m3s   : 단일항 생성률 [m⁻³/s]
+        G_triplet_m3s   : 삼중항 생성률 [m⁻³/s]
+        """
+        return {
+            "voltage_V":      self.voltage_V,
+            "z_nm":           self.z_nm.tolist(),
+            "G_total_m3s":    self.G_exciton_m3s.tolist(),
+            "G_singlet_m3s":  self.G_singlet_m3s.tolist(),
+            "G_triplet_m3s":  self.G_triplet_m3s.tolist(),
+        }
+
+    def to_csv(self, path: str | Path) -> None:
+        """재결합 프로파일을 CSV 파일로 저장."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        header = "z_nm,R_srh_m3s,R_lan_m3s,R_total_m3s,G_singlet_m3s,G_triplet_m3s"
+        rows = [
+            f"{z:.3f},{rs:.6e},{rl:.6e},{rt:.6e},{gs:.6e},{gt:.6e}"
+            for z, rs, rl, rt, gs, gt in zip(
+                self.z_nm, self.R_srh_m3s, self.R_lan_m3s, self.R_total_m3s,
+                self.G_singlet_m3s, self.G_triplet_m3s,
+            )
+        ]
+        path.write_text(header + "\n" + "\n".join(rows), encoding="utf-8")

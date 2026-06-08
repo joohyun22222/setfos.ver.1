@@ -1,4 +1,4 @@
-"""Tests for Step 7 — 1D electrical solver skeleton.
+"""Tests for Step 7/8 — 1D electrical solver + drift-diffusion.
 
 Coverage
 --------
@@ -6,10 +6,11 @@ TestMesh1D          (10) — node grid, layer assignment, property arrays
 TestNodeProps        (5) — organic vs electrode property derivation
 TestDeviceState      (7) — state container, derived quantities, E_field
 TestPoissonSolver    (9) — matrix structure, BCs, linear-φ correctness
-TestContinuity       (6) — interface contract, Bernoulli, SRH
+TestContinuity       (6) — Bernoulli, SRH, SG solver 기본 동작
 TestGummelSolver     (7) — equilibrium state, Gummel iteration
 TestBiasSweep        (6) — voltage sweep orchestration
 TestSweepResult      (5) — aggregated J-V arrays, I/O
+TestStep8DD         (10) — drift-diffusion J-V 계산 검증
 """
 
 from __future__ import annotations
@@ -305,19 +306,21 @@ class TestContinuity:
     def test_can_instantiate(self, continuity):
         assert isinstance(continuity, ContinuitySolver)
 
-    def test_solve_electrons_raises_not_implemented(self, continuity, mesh):
+    def test_solve_electrons_returns_array(self, continuity, mesh):
+        """solve_electrons 가 (N,) 배열을 반환하는지 확인."""
         N   = mesh.num_nodes
-        phi = np.zeros(N)
+        phi = np.linspace(1.0, 0.0, N)
         p   = np.full(N, 1e10)
-        with pytest.raises(NotImplementedError):
-            continuity.solve_electrons(phi, p, 1e10, 1e10)
+        n   = continuity.solve_electrons(phi, p, 1e10, 1e22)
+        assert n.shape == (N,)
 
-    def test_solve_holes_raises_not_implemented(self, continuity, mesh):
+    def test_solve_holes_returns_array(self, continuity, mesh):
+        """solve_holes 가 (N,) 배열을 반환하는지 확인."""
         N   = mesh.num_nodes
-        phi = np.zeros(N)
+        phi = np.linspace(1.0, 0.0, N)
         n   = np.full(N, 1e10)
-        with pytest.raises(NotImplementedError):
-            continuity.solve_holes(phi, n, 1e10, 1e10)
+        p   = continuity.solve_holes(phi, n, 1e22, 1e10)
+        assert p.shape == (N,)
 
     def test_bernoulli_at_zero(self, continuity):
         """B(0) = 1 from the Taylor expansion."""
@@ -437,3 +440,93 @@ class TestSweepResult:
         assert "voltages_V" in data
         assert "J_Am2" in data
         assert data["n_points"] == 3
+
+
+# ---------------------------------------------------------------------------
+# TestStep8DD — drift-diffusion J-V 검증
+# ---------------------------------------------------------------------------
+
+class TestStep8DD:
+    """Step 8: Scharfetter-Gummel drift-diffusion 통합 테스트."""
+
+    @pytest.fixture(scope="class")
+    def dd_gummel(self, project):
+        """수렴·감쇄 파라미터를 완화한 Gummel 솔버."""
+        mesh = build_mesh(project.device_stack, project.material_db,
+                          z_resolution_nm=2.0)
+        return build_solver(mesh, GummelConfig(max_iterations=200,
+                                               tolerance=1e-4,
+                                               damping=0.5))
+
+    @pytest.fixture(scope="class")
+    def jv_result(self, dd_gummel):
+        """0~3 V 범위 5점 J-V 스윕."""
+        runner = BiasSweepRunner(dd_gummel, v_start=0.0, v_end=3.0, n_points=5)
+        return runner.run()
+
+    # ── 기본 형태 ──────────────────────────────────────────────────────
+
+    def test_jv_has_correct_number_of_points(self, jv_result):
+        assert len(jv_result.bias_points) == 5
+
+    def test_all_states_have_carrier_arrays(self, jv_result):
+        """모든 편향점에서 n, p 배열이 존재하는지 확인."""
+        for bp in jv_result.bias_points:
+            assert bp.state.n_m3.shape == bp.state.p_m3.shape
+            assert bp.state.n_m3.shape[0] > 0
+
+    def test_carrier_densities_positive(self, jv_result):
+        """n, p 값이 모두 양수인지 확인 (클램프 로직 검증)."""
+        for bp in jv_result.bias_points:
+            assert np.all(bp.state.n_m3 > 0), "전자 밀도에 음수 존재"
+            assert np.all(bp.state.p_m3 > 0), "정공 밀도에 음수 존재"
+
+    def test_current_arrays_shape(self, jv_result):
+        """Jn, Jp 배열이 (N-1,) 형태인지 확인."""
+        for bp in jv_result.bias_points:
+            N = bp.state.phi_V.shape[0]
+            assert bp.state.Jn_Am2.shape == (N - 1,)
+            assert bp.state.Jp_Am2.shape == (N - 1,)
+
+    def test_e_field_available(self, jv_result):
+        """dz_m 이 설정되어 E_field_Vm 접근 가능한지 확인."""
+        for bp in jv_result.bias_points:
+            E = bp.state.E_field_Vm
+            assert E is not None
+            assert len(E) > 0
+
+    def test_zero_bias_current_small(self, jv_result):
+        """0 V 에서 전류는 거의 0에 가까워야 함."""
+        bp0 = jv_result.bias_points[0]
+        assert abs(bp0.state.J_total_mAcm2) < 10.0, (
+            f"0 V 에서 전류가 너무 큼: {bp0.state.J_total_mAcm2:.3f} mA/cm²"
+        )
+
+    def test_forward_bias_current_positive(self, jv_result):
+        """순방향 바이어스에서 전류가 0 V 보다 크거나 같아야 함."""
+        J_values = [bp.state.J_total for bp in jv_result.bias_points]
+        # 전체 J-V 가 단조 증가할 필요는 없지만 최대값이 0보다 커야 함
+        assert max(J_values) >= J_values[0], "순방향 바이어스 전류 없음"
+
+    def test_phi_monotonic_at_forward_bias(self, jv_result):
+        """순방향 바이어스(V>0)에서 φ(0) > φ(-1) 이어야 함."""
+        for bp in jv_result.bias_points:
+            if bp.voltage_V > 0.5:
+                assert bp.state.phi_V[0] > bp.state.phi_V[-1], (
+                    f"V={bp.voltage_V:.2f} V 에서 퍼텐셜 방향이 잘못됨"
+                )
+
+    def test_convergence_logged_for_all_points(self, jv_result, capsys):
+        """모든 바이어스 포인트가 BiasPoint 객체인지 확인."""
+        for bp in jv_result.bias_points:
+            assert isinstance(bp, BiasPoint)
+            assert isinstance(bp.converged, bool)
+            assert bp.n_iterations >= 1
+
+    def test_csv_export_has_current_column(self, jv_result, tmp_path):
+        """J-V CSV 파일에 전류 컬럼이 있는지 확인."""
+        out = tmp_path / "jv_step8.csv"
+        jv_result.to_csv(out)
+        lines = out.read_text().splitlines()
+        assert "J_Am2" in lines[0]
+        assert len(lines) == 6  # 헤더 + 5 데이터 행

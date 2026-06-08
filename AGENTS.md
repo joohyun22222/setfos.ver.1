@@ -25,7 +25,7 @@
 - When editing YAML, preserve the existing sample structure used by the current config files.
 
 ## 추가 규칙
-- 주석은 한국어로 항상 해줘
+- 주석은 한국어로 항상 해줘.
 
 ## 공동지시문
 우리는 최종적으로 Setfos급 고정밀 OLED 시뮬레이션 프로그램을 만든다.
